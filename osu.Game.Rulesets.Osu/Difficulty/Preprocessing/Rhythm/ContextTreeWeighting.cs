@@ -43,7 +43,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
             }
         }
 
-        public ContextTreeWeighting(int maxDepth, int alphabetSize, double[] prior, int clusterCount)
+        public ContextTreeWeighting(int maxDepth, int alphabetSize, int clusterCount)
         {
             this.maxDepth = maxDepth;
             this.alphabetSize = alphabetSize;
@@ -113,49 +113,38 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
         {
             int maxSearchDepth = Math.Min(bufferCount, maxDepth);
 
-            // Track path indices for the current context
-            Span<int> pathIndices = stackalloc int[maxSearchDepth + 1];
-            pathIndices[0] = root_index;
-
-            int actualDepth = 0;
+            int currentContextIdx = root_index;
 
             for (int d = 0; d < maxSearchDepth; d++)
             {
                 int contextSymbol = contextBuffer[(bufferCount - 1 - d) % maxDepth];
+                int nextChildIdx = childIndicesPool[currentContextIdx * alphabetSize + contextSymbol];
 
-                int currentStrideOffset = pathIndices[d] * alphabetSize;
-                int childIdx = childIndicesPool[currentStrideOffset + contextSymbol];
-
-                // If the context path doesn't exist in the prebuilt tree, stop descending
-                if (childIdx == -1)
+                if (nextChildIdx == -1)
                     break;
 
-                pathIndices[d + 1] = childIdx;
-                actualDepth++;
+                currentContextIdx = nextChildIdx;
             }
 
-            // Blend the precomputed weighted probabilities up the active context path
-            double logProbMixed = 0;
+            int evaluatedChildIdx = childIndicesPool[currentContextIdx * alphabetSize + symbol];
 
-            for (int d = actualDepth; d >= 0; d--)
+            double logProbConditional;
+
+            if (evaluatedChildIdx != -1)
             {
-                int currentIdx = pathIndices[d];
+                logProbConditional = logProbWeightedPool[evaluatedChildIdx] - logProbWeightedPool[currentContextIdx];
+            }
+            else
+            {
+                int symbolCount = countsPool[currentContextIdx * alphabetSize + symbol];
+                int totalCount = totalCountPool[currentContextIdx];
 
-                // Find the child index corresponding to the symbol being evaluated
-                int childIdx = childIndicesPool[currentIdx * alphabetSize + symbol];
-
-                // If the symbol was never seen in this context during the construction pass, fall back to its base KT probability
-                double logProbNode = childIdx != -1
-                    ? logProbWeightedPool[childIdx]
-                    : logProbKtPool[currentIdx];
-
-                if (d == actualDepth)
-                    logProbMixed = logProbNode;
-                else
-                    logProbMixed = -log_two + LogSumExp(logProbNode, logProbMixed);
+                logProbConditional = logGammaNumerator[symbolCount] - logGammaDenominator[totalCount];
             }
 
-            double surprisal = -logProbMixed / log_two;
+            double surprisal = -logProbConditional / log_two;
+
+            if (surprisal is < 0 or double.NaN) surprisal = 0;
 
             // double crossEntropy = 0;
             // int deepNodeIdx = pathIndices[actualDepth];

@@ -179,7 +179,9 @@ namespace osu.Game.Rulesets.Osu.Difficulty
                 objects.Add(new OsuDifficultyHitObject(beatmap.HitObjects[i], beatmap.HitObjects[i - 1], clockRate, objects, objects.Count));
             }
 
-            Preprocessing.Rhythm.ClusterConstructor.CreateClusters(objects);
+            var clusters = Preprocessing.Rhythm.ClusterConstructor.CreateClusters(objects);
+            Preprocessing.Rhythm.ClusterDifficultyPreprocessor.ProcessAndAssign(clusters);
+            Preprocessing.Rhythm.ClusterProfiler.ProfileMapSurprisals(clusters);
 
             return objects;
         }

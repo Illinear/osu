@@ -16,7 +16,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
         /// Scans a list of <see cref="DifficultyHitObject"/> and arranges the hit objects into clusters.
         /// A cluster is defined as a series of equidistant notes - each cluster has an associated <see cref="RhythmClusterData"/> which tracks cluster timing and identity.
         /// </summary>
-        public static void CreateClusters(List<DifficultyHitObject> objects)
+        public static List<RhythmClusterData> CreateClusters(List<DifficultyHitObject> objects)
         {
             var activeObjects = new List<OsuDifficultyHitObject>();
 
@@ -26,7 +26,9 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
                     activeObjects.Add(osuObj);
             }
 
-            if (activeObjects.Count < 2) return;
+            if (activeObjects.Count < 2) return new List<RhythmClusterData>();
+
+            var clusterSequence = new List<RhythmClusterData>();
 
             int i = 0;
             double prevGapDelta = activeObjects[1].StartTime - activeObjects[0].StartTime;
@@ -112,6 +114,8 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
                     paritySymbol
                 );
 
+                clusterSequence.Add(data);
+
                 // Assign data back to the hit objects for the evaluators to consume
                 for (int j = start; j <= end; j++)
                 {
@@ -134,6 +138,8 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
                     i++;
                 }
             }
+
+            return clusterSequence;
         }
     }
 }

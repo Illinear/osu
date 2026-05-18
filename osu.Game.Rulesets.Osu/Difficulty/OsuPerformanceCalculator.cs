@@ -153,13 +153,13 @@ namespace osu.Game.Rulesets.Osu.Difficulty
             double aimValue = computeAimValue(score, osuAttributes);
             double speedValue = computeSpeedValue(score, osuAttributes);
             double accuracyValue = computeAccuracyValue(score, osuAttributes);
+            double rhythmValue = computeRhythmValue(osuAttributes);
 
             double readingValue = computeReadingValue(osuAttributes);
             double flashlightValue = computeFlashlightValue(score, osuAttributes);
             double cognitionValue = OsuDifficultyCalculator.SumCognitionDifficulty(readingValue, flashlightValue);
 
-            double totalValue = DifficultyCalculationUtils.Norm(PERFORMANCE_NORM_EXPONENT, aimValue, speedValue, accuracyValue, cognitionValue) * multiplier;
-
+            double totalValue = DifficultyCalculationUtils.Norm(PERFORMANCE_NORM_EXPONENT, aimValue, speedValue, accuracyValue, cognitionValue, rhythmValue) * multiplier;
             return new OsuPerformanceAttributes
             {
                 Aim = aimValue,
@@ -167,6 +167,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty
                 Accuracy = accuracyValue,
                 Flashlight = flashlightValue,
                 Reading = readingValue,
+                Rhythm = rhythmValue,
                 EffectiveMissCount = effectiveMissCount,
                 ComboBasedEstimatedMissCount = comboBasedEstimatedMissCount,
                 ScoreBasedEstimatedMissCount = scoreBasedEstimatedMissCount,
@@ -325,6 +326,29 @@ namespace osu.Game.Rulesets.Osu.Difficulty
             flashlightValue *= 0.5 + accuracy / 2.0;
 
             return flashlightValue;
+        }
+
+        private double computeRhythmValue(OsuDifficultyAttributes attributes)
+        {
+            // A simplified version of computeSpeedValue used as a placeholder for rhythm until more interesting things can be done
+            if (attributes.RhythmDifficulty <= 0 || speedDeviation == null)
+                return HarmonicSkill.DifficultyToPerformance(attributes.RhythmDifficulty);
+
+            double rhythmValue = HarmonicSkill.DifficultyToPerformance(attributes.RhythmDifficulty);
+
+            double effectiveHitWindow = 20 * Math.Pow(4 / attributes.RhythmDifficulty, 0.35);
+            double effectiveAccuracy = DifficultyCalculationUtils.Erf(effectiveHitWindow / (double)speedDeviation);
+
+            rhythmValue *= Math.Pow(effectiveAccuracy, 2.0);
+
+            if (effectiveMissCount > 0)
+            {
+                double relevantMissCount = Math.Min(effectiveMissCount + speedEstimatedSliderBreaks,
+                    totalImperfectHits + countSliderTickMiss);
+                rhythmValue *= calculateMissPenalty(relevantMissCount, attributes.SpeedDifficultStrainCount);
+            }
+
+            return rhythmValue;
         }
 
         private double computeReadingValue(OsuDifficultyAttributes attributes)

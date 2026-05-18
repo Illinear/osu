@@ -48,14 +48,10 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
             currentStrain *= decay;
             currentStrain += calculateModAdjustedDifficulty(current) * (1 - decay) * skillMultiplier;
 
-            double currentRhythm = RhythmEvaluator.EvaluateDifficultyOf(current);
-
-            double totalStrain = currentStrain * currentRhythm;
-
             if (current.BaseObject is Slider)
-                sliderStrains.Add(totalStrain);
+                sliderStrains.Add(currentStrain);
 
-            return totalStrain;
+            return currentStrain;
         }
 
         private double calculateModAdjustedDifficulty(DifficultyHitObject current)

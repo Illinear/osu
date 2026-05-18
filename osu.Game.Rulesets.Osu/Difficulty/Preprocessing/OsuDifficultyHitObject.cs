@@ -7,6 +7,7 @@ using System.Linq;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Difficulty.Utils;
 using osu.Game.Rulesets.Objects;
+using osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm;
 using osu.Game.Rulesets.Osu.Mods;
 using osu.Game.Rulesets.Osu.Objects;
 using osu.Game.Rulesets.Scoring;
@@ -127,6 +128,17 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing
         /// Selective bonus for maps with higher circle size.
         /// </summary>
         public double SmallCircleBonus { get; private set; }
+
+        /// <summary>
+        /// The primary rhythm cluster to which the <see cref="OsuDifficultyHitObject"/> belongs.
+        /// </summary>
+        public RhythmClusterData? PrimaryRhythmCluster { get; set; }
+
+        /// <summary>
+        /// If the <see cref="OsuDifficultyHitObject"/> was determined to semantically belong to two rhythm clusters as a "pivot note",
+        /// this is the secondary rhythm cluster to which it belongs.
+        /// </summary>
+        public RhythmClusterData? OverlapRhythmCluster { get; set; }
 
         private readonly OsuDifficultyHitObject? lastLastDifficultyObject;
         private readonly OsuDifficultyHitObject? lastDifficultyObject;

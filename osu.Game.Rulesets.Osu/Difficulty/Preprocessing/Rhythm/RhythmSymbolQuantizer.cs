@@ -37,6 +37,13 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
         // Center bin index (ratios close to 1.0)
         private const int center_bin = 10;
 
+        /// <summary>
+        /// Quantizes a relative rhythm ratio between two hit object clusters (see: <see cref="RhythmClusterData"/>) into an idealized ratio symbol for further statistical analysis.
+        /// </summary>
+        /// <param name="currDelta">The delta time of the current hit object cluster.</param>
+        /// <param name="prevDelta">The delta time of the preceding hit object cluster.</param>
+        /// <param name="epsilon">The tolerance for transforming deltas into unity ratios.</param>
+        /// <returns>An int ID corresponding to any of the idealized ratios in <see cref="target_ratios"/>.</returns>
         public static int QuantizeRatio(double currDelta, double prevDelta, double epsilon)
         {
             // Deltas within the OD hit window are indistinguishable, snap to center

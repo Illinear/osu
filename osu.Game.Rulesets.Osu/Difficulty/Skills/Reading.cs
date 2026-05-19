@@ -28,7 +28,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
 
         private double currentStrain;
 
-        private double skillMultiplier => 2.5;
+        private double skillMultiplier => 0.0; // Was 2.5
         private double strainDecayBase => 0.8;
 
         private double strainDecay(double ms) => Math.Pow(strainDecayBase, ms / 1000);

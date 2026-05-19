@@ -17,14 +17,14 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Skills
     /// </summary>
     public class Rhythm : HarmonicSkill
     {
-        private double skillMultiplier => 1.0;
+        private double skillMultiplier => 20.0;
 
         private double currentDifficulty;
 
         private double strainDecayBase => 0.3;
 
         protected override double HarmonicScale => 20;
-        protected override double DecayExponent => 0.9;
+        protected override double DecayExponent => 0.8;
 
         public Rhythm(Mod[] mods)
             : base(mods)

@@ -7,7 +7,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
 {
     public static class ClusterDifficultyPreprocessor
     {
-        private const int ctw_max_depth = 3;
+        private const int ctw_max_depth = 4;
 
         public static void ProcessAndAssign(List<RhythmClusterData>? clusters)
         {

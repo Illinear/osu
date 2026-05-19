@@ -63,19 +63,10 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
             logGammaNumerator = new double[cacheSizeNeeded + 1];
             logGammaDenominator = new double[cacheSizeNeeded + 1];
 
-            logGammaNumerator[0] = 0.0;
-            logGammaDenominator[0] = 0.0;
-
-            double cumulativeNum = 0;
-            double cumulativeDen = 0;
-
-            for (int i = 1; i <= cacheSizeNeeded; i++)
+            for (int i = 0; i <= cacheSizeNeeded; i++)
             {
-                cumulativeNum += Math.Log(i - 1 + 0.5);
-                cumulativeDen += Math.Log(i - 1 + alphabetSize / 2.0);
-
-                logGammaNumerator[i] = cumulativeNum;
-                logGammaDenominator[i] = cumulativeDen;
+                logGammaNumerator[i] = Math.Log(i + 0.5);
+                logGammaDenominator[i] = Math.Log(i + alphabetSize / 2.0);
             }
 
             // Calculate exact total required memory capacity based on dynamic parameters
@@ -112,39 +103,46 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
         public EvaluationResult EvaluateTreeNode(int symbol)
         {
             int maxSearchDepth = Math.Min(bufferCount, maxDepth);
+            Span<int> pathIndices = stackalloc int[maxSearchDepth + 1];
+            pathIndices[0] = root_index;
 
-            int currentContextIdx = root_index;
+            int actualDepth = 0;
 
             for (int d = 0; d < maxSearchDepth; d++)
             {
                 int contextSymbol = contextBuffer[(bufferCount - 1 - d) % maxDepth];
-                int nextChildIdx = childIndicesPool[currentContextIdx * alphabetSize + contextSymbol];
+                int childIdx = childIndicesPool[pathIndices[d] * alphabetSize + contextSymbol];
 
-                if (nextChildIdx == -1)
+                if (childIdx == -1)
                     break;
 
-                currentContextIdx = nextChildIdx;
+                pathIndices[d + 1] = childIdx;
+                actualDepth++;
             }
 
-            int evaluatedChildIdx = childIndicesPool[currentContextIdx * alphabetSize + symbol];
+            double logProbMixed = 0;
 
-            double logProbConditional;
-
-            if (evaluatedChildIdx != -1)
+            for (int d = actualDepth; d >= 0; d--)
             {
-                logProbConditional = logProbWeightedPool[evaluatedChildIdx] - logProbWeightedPool[currentContextIdx];
+                int currentIdx = pathIndices[d];
+                int countOffset = currentIdx * alphabetSize + symbol;
+
+                int symbolCount = countsPool[countOffset];
+                int totalCount = totalCountPool[currentIdx];
+
+                double logProbKt = logGammaNumerator[symbolCount] - logGammaDenominator[totalCount];
+
+                if (d == actualDepth)
+                {
+                    logProbMixed = logProbKt;
+                }
+                else
+                {
+                    logProbMixed = -log_two + LogSumExp(logProbKt, logProbMixed);
+                }
             }
-            else
-            {
-                int symbolCount = countsPool[currentContextIdx * alphabetSize + symbol];
-                int totalCount = totalCountPool[currentContextIdx];
 
-                logProbConditional = logGammaNumerator[symbolCount] - logGammaDenominator[totalCount];
-            }
-
-            double surprisal = -logProbConditional / log_two;
-
-            if (surprisal is < 0 or double.NaN) surprisal = 0;
+            double surprisal = -logProbMixed / log_two;
 
             // double crossEntropy = 0;
             // int deepNodeIdx = pathIndices[actualDepth];
@@ -174,7 +172,6 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
         public void ConstructTreeNode(int symbol)
         {
             int depth = Math.Min(bufferCount, maxDepth);
-
             Span<int> pathIndices = stackalloc int[depth + 1];
             pathIndices[0] = root_index;
 
@@ -187,7 +184,6 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
             for (int d = depth; d >= 0; d--)
             {
                 int idx = pathIndices[d];
-
                 countsPool[idx * alphabetSize + symbol]++;
                 totalCountPool[idx]++;
             }
@@ -232,25 +228,25 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Preprocessing.Rhythm
                     finalizeProbabilitiesRecursive(childIdx, currentDepth + 1);
             }
 
-            bool isLeaf = currentDepth == maxDepth;
-
             double accumulatedLogKtNumerator = 0;
 
             for (int i = 0; i < alphabetSize; i++)
             {
                 int count = countsPool[strideOffset + i];
-                if (count > 0)
-                    accumulatedLogKtNumerator += logGammaNumerator[count - 1];
+                for (int c = 0; c < count; c++) accumulatedLogKtNumerator += logGammaNumerator[c];
             }
 
             double accumulatedLogKtDenominator = 0;
             int totalCount = totalCountPool[nodeIdx];
-            if (totalCount > 0)
-                accumulatedLogKtDenominator = logGammaDenominator[totalCount - 1];
+
+            for (int t = 0; t < totalCount; t++)
+            {
+                accumulatedLogKtDenominator += logGammaDenominator[t];
+            }
 
             logProbKtPool[nodeIdx] = accumulatedLogKtNumerator - accumulatedLogKtDenominator;
 
-            if (isLeaf)
+            if (currentDepth == maxDepth)
             {
                 logProbWeightedPool[nodeIdx] = logProbKtPool[nodeIdx];
                 return;

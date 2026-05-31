@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using osu.Framework.Utils;
 using osu.Game.Rulesets.Difficulty.Preprocessing;
 using osu.Game.Rulesets.Difficulty.Utils;
 using osu.Game.Rulesets.Osu.Difficulty.Preprocessing;
@@ -16,8 +17,13 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators.Speed
     {
         private const int history_time_max = 5 * 1000; // 5 seconds
         private const int history_objects_max = 32;
-        private const double rhythm_overall_multiplier = 0.95;
-        private const double rhythm_ratio_multiplier = 26.0;
+
+        private const double rhythm_overall_multiplier = 0.75;
+        private const double rhythm_ratio_multiplier = 13.0;
+
+        private const double fcontrol_gallop_midpoint = 37.0;
+        private const double fcontrol_exp_compression = 0.5;
+        private const double fcontrol_multiplier = 0.20;
 
         /// <summary>
         /// Calculates a rhythm multiplier for the difficulty of the tap associated with historic data of the current <see cref="OsuDifficultyHitObject"/>.
@@ -49,13 +55,13 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators.Speed
             while (rhythmStart < historicalNoteCount - 2 && current.StartTime - current.Previous(rhythmStart).StartTime < history_time_max)
                 rhythmStart++;
 
-            OsuDifficultyHitObject prevObj = (OsuDifficultyHitObject)current.Previous(rhythmStart);
-            OsuDifficultyHitObject lastObj = (OsuDifficultyHitObject)current.Previous(rhythmStart + 1);
+            var prevObj = (OsuDifficultyHitObject)current.Previous(rhythmStart);
+            var lastObj = (OsuDifficultyHitObject)current.Previous(rhythmStart + 1);
 
             // we go from the furthest object back to the current one
             for (int i = rhythmStart; i > 0; i--)
             {
-                OsuDifficultyHitObject currObj = (OsuDifficultyHitObject)current.Previous(i - 1);
+                var currObj = (OsuDifficultyHitObject)current.Previous(i - 1);
                 if (currObj.BaseObject is Spinner)
                     continue;
 
@@ -83,7 +89,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators.Speed
 
                 double windowPenalty = Math.Min(1, Math.Max(0, Math.Abs(prevDelta - currDelta) - deltaDifferenceEpsilon) / deltaDifferenceEpsilon);
 
-                double effectiveRatio = getEffectiveRatio(deltaDifference) * windowPenalty * differenceMultiplier;
+                double effectiveRatio = (getEffectiveRatio(deltaDifference) + getBaseFingerControlDifficulty(currDelta, prevDelta)) * windowPenalty * differenceMultiplier;
 
                 // if previous object is a slider it might be easier to tap since you don't have to do a whole tapping motion
                 // while a full deltatime might end up some weird ratio the "unpress->tap" motion might be simple
@@ -150,10 +156,7 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators.Speed
                         }
                         else
                         {
-                            if (island.DeltaCount > 0)
-                            {
-                                islandCounts.Add((island, 1));
-                            }
+                            if (island.DeltaCount > 0) islandCounts.Add((island, 1));
                         }
 
                         // scale down the difficulty if the object is doubletappable
@@ -201,12 +204,62 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators.Speed
             return Math.Sqrt(4 + rhythmComplexitySum * rhythm_overall_multiplier) / 2.0; // produces multiplier that can be applied to strain. range [1, infinity) (not really though);
         }
 
+        private static double getBaseFingerControlDifficulty(double currDelta, double prevDelta)
+        {
+            // Get basic taps per second associated with the two objects
+            double prevVelocity = 1000.0 / prevDelta;
+            double currVelocity = 1000.0 / currDelta;
+
+            // Calculate the physical acceleration over the current time gap
+            double dtInSeconds = currDelta / 1000.0;
+            double rawKinematicAccel = (currVelocity - prevVelocity) / dtInSeconds;
+
+            // Gallop factor to smoothly dampen patterns that can be mashed
+            double gallopFactor = 1.0 / (1.0 + Math.Exp(0.5 * (currDelta - fcontrol_gallop_midpoint)));
+
+            // Compress the raw acceleration to reflect nonlinear physical effort
+            double compressedAccel = Math.Sign(rawKinematicAccel) * Math.Pow(Math.Abs(rawKinematicAccel), fcontrol_exp_compression);
+
+            compressedAccel *= 1.0 - gallopFactor;
+
+            return fcontrol_multiplier * Math.Abs(compressedAccel);
+        }
+
         private static double getEffectiveRatio(double deltaDifference)
         {
-            // Take only the fractional part of the value since we're only interested in punishing multiples
-            double deltaDifferenceFraction = deltaDifference - Math.Truncate(deltaDifference);
+            var ratioMultipliers = new[]
+            {
+                (1.0, 0.01), // same rhythm
+                (4.0 / 3.0, 2.0), // 1/4 <-> 1/3
+                (1.5, 1.5), // 1/3 <-> 1/2
+                (5.0 / 3.0, 3.0), // 1/5 <-> 1/3
+                (2.0, 0.05), // 1/4 <-> 1/2
+                (2.5, 1.5), // 1/5 <-> 1/2
+                (3.0, 0.25), // 1/3 <-> 1/1
+                (4.0, 0.0) // 1/4 <-> 1/1
+            };
 
-            return 1.0 + rhythm_ratio_multiplier * Math.Min(0.5, DifficultyCalculationUtils.SmoothstepBellCurve(deltaDifferenceFraction));
+            return rhythm_ratio_multiplier * lerpFromArrays(ratioMultipliers, deltaDifference);
+        }
+
+        private static double lerpFromArrays((double ratio, double multiplier)[] ratioMultipliers, double t)
+        {
+            if (t <= ratioMultipliers[0].ratio)
+                return ratioMultipliers[0].multiplier;
+
+            if (t >= ratioMultipliers[^1].ratio)
+                return ratioMultipliers[^1].multiplier;
+
+            for (int i = 0; i < ratioMultipliers.Length - 1; i++)
+            {
+                if (t >= ratioMultipliers[i].ratio && t <= ratioMultipliers[i + 1].ratio)
+                {
+                    double distance = (t - ratioMultipliers[i].ratio) / (ratioMultipliers[i + 1].ratio - ratioMultipliers[i].ratio);
+                    return Interpolation.Lerp(ratioMultipliers[i].multiplier, ratioMultipliers[i + 1].multiplier, distance);
+                }
+            }
+
+            return 0;
         }
 
         private class Island : IEquatable<Island>

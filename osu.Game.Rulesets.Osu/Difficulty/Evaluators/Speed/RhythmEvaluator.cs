@@ -18,12 +18,12 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators.Speed
         private const int history_time_max = 5 * 1000; // 5 seconds
         private const int history_objects_max = 32;
 
-        private const double rhythm_overall_multiplier = 0.75;
+        private const double rhythm_overall_multiplier = 0.78;
         private const double rhythm_ratio_multiplier = 13.0;
 
         private const double fcontrol_gallop_midpoint = 37.0;
         private const double fcontrol_exp_compression = 0.5;
-        private const double fcontrol_multiplier = 0.20;
+        private const double fcontrol_multiplier = 0.13;
 
         /// <summary>
         /// Calculates a rhythm multiplier for the difficulty of the tap associated with historic data of the current <see cref="OsuDifficultyHitObject"/>.
@@ -89,7 +89,10 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators.Speed
 
                 double windowPenalty = Math.Min(1, Math.Max(0, Math.Abs(prevDelta - currDelta) - deltaDifferenceEpsilon) / deltaDifferenceEpsilon);
 
-                double effectiveRatio = (getEffectiveRatio(deltaDifference) + getBaseFingerControlDifficulty(currDelta, prevDelta)) * windowPenalty * differenceMultiplier;
+                double baseEffectiveRatio = getEffectiveRatio(deltaDifference);
+                double baseFingerControl = getBaseFingerControlDifficulty(currDelta, prevDelta);
+
+                double effectiveRatio = (baseEffectiveRatio + baseFingerControl) * windowPenalty * differenceMultiplier;
 
                 // if previous object is a slider it might be easier to tap since you don't have to do a whole tapping motion
                 // while a full deltatime might end up some weird ratio the "unpress->tap" motion might be simple
@@ -135,24 +138,37 @@ namespace osu.Game.Rulesets.Osu.Difficulty.Evaluators.Speed
                         if (previousIsland.DeltaCount == island.DeltaCount)
                             effectiveRatio *= 0.5;
 
+                        // speedup + slowdown nerfs if associated with a fast flicker followed by a silence, or vice versa
+                        // TODO: temporary nerf, currently works well in conjunction with getBaseFingerControlDifficulty logic, but doesn't *appear* too correct
                         if (isSpeedingUp)
-                            effectiveRatio *= 0.65;
-
-                        var islandCount = islandCounts.FirstOrDefault(x => x.Island.Equals(island));
-
-                        if (islandCount != default)
                         {
-                            int countIndex = islandCounts.IndexOf(islandCount);
+                            double entryPreparationRatio = prevDelta / currDelta;
+                            double compressionPenalty = Math.Clamp(1.5 - entryPreparationRatio / 8.0, 0.65, 1.0); // begin to trigger at 4:1 ratio, maximize at ~7:1
+                            effectiveRatio *= 0.5 * compressionPenalty;
+                        }
+                        else
+                        {
+                            double exitRecoveryRatio = currDelta / prevDelta;
+                            double decompressionPenalty = Math.Clamp(2.0 - exitRecoveryRatio / 4.0, 0.3, 1.0); // begin to trigger at 4:1 ratio, maximize at ~7:1
+                            effectiveRatio *= decompressionPenalty;
+                        }
+
+                        // logic for nerfing islands of the repeating same size within the window
+                        var equalNoteIslandCount = islandCounts.FirstOrDefault(x => x.Island.Equals(island));
+
+                        if (equalNoteIslandCount != default)
+                        {
+                            int countIndex = islandCounts.IndexOf(equalNoteIslandCount);
 
                             // only add island to island counts if they're going one after another
                             if (previousIsland.Equals(island))
-                                islandCount.Count++;
+                                equalNoteIslandCount.Count++;
 
                             // repeated island (ex: triplet -> triplet)
                             double power = DifficultyCalculationUtils.Logistic(island.Delta, maxValue: 2.75, multiplier: 0.24, midpointOffset: 58.33);
-                            effectiveRatio *= Math.Min(3.0 / islandCount.Count, Math.Pow(1.0 / islandCount.Count, power));
+                            effectiveRatio *= Math.Min(3.0 / equalNoteIslandCount.Count, Math.Pow(1.0 / equalNoteIslandCount.Count, power));
 
-                            islandCounts[countIndex] = (islandCount.Island, islandCount.Count);
+                            islandCounts[countIndex] = (equalNoteIslandCount.Island, equalNoteIslandCount.Count);
                         }
                         else
                         {
